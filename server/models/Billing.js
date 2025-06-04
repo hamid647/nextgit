@@ -35,10 +35,13 @@ const billingSchema = new Schema({
     requested: { type: Boolean, default: false },
     newAmount: { type: Number, min: 0 },
     reason: { type: String, trim: true },
+    requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     requestedAt: { type: Date },
     resolved: { type: Boolean, default: false },
+    resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     resolvedAt: { type: Date },
-    approved: { type: Boolean } // true if approved, false if rejected
+    approved: { type: Boolean }, // true if approved, false if rejected
+    ownerComment: { type: String, trim: true }
   }
 }, { timestamps: true });
 

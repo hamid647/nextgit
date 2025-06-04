@@ -10,12 +10,15 @@ export default function StaffDashboard() {
 
   const [services, setServices] = useState([]);
   const [isLoadingServices, setIsLoadingServices] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''); // General error for the page
+  const [formError, setFormError] = useState(''); // Error specific to the submission form
+  const [formSuccess, setFormSuccess] = useState(''); // Success message for form
 
-  const [selectedServices, setSelectedServices] = useState({}); // Store selected state: { serviceId: boolean }
+  const [selectedServices, setSelectedServices] = useState({});
   const [customerName, setCustomerName] = useState('');
   const [carDetails, setCarDetails] = useState('');
   const [calculatedTotal, setCalculatedTotal] = useState(0);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   const fetchServices = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -33,15 +36,13 @@ export default function StaffDashboard() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    // Role check: Staff or Owner can access
     if (!authLoading && (!isAuthenticated || !['staff', 'owner'].includes(user?.role))) {
       router.push('/login');
-    } else if (isAuthenticated && user?.role) { // Check for user.role to be present
+    } else if (isAuthenticated && user?.role) {
       fetchServices();
     }
   }, [user, authLoading, isAuthenticated, router, fetchServices]);
 
-  // Calculate total when selectedServices or services list changes
   useEffect(() => {
     let total = 0;
     services.forEach(service => {
@@ -57,46 +58,64 @@ export default function StaffDashboard() {
       ...prev,
       [serviceId]: !prev[serviceId]
     }));
+    setFormError(''); // Clear form error on interaction
+    setFormSuccess('');
   };
 
-  const handleSubmitOrder = () => {
-    // This function will be expanded in a later step to create a billing record
+  const resetForm = () => {
+    setCustomerName('');
+    setCarDetails('');
+    setSelectedServices({});
+    setCalculatedTotal(0); // This will be recalculated by useEffect anyway
+    setFormError('');
+  };
+
+  const handleSubmitOrder = async () => {
+    setFormError('');
+    setFormSuccess('');
+
     if (Object.values(selectedServices).every(v => !v)) {
-      alert('Please select at least one service.');
+      setFormError('Please select at least one service.');
       return;
     }
     if (!customerName.trim()) {
-      alert('Please enter customer name.');
+      setFormError('Please enter customer name.');
       return;
     }
+    // Car details can be optional based on requirements, for now let's make it required
     if (!carDetails.trim()) {
-      alert('Please enter car details.');
+      setFormError('Please enter car details.');
       return;
     }
 
     const orderDetails = {
-      customerName,
-      carDetails,
-      selectedServiceIds: Object.keys(selectedServices).filter(id => selectedServices[id]),
+      customerName: customerName.trim(),
+      carDetails: carDetails.trim(),
+      serviceIds: Object.keys(selectedServices).filter(id => selectedServices[id]),
       totalAmount: calculatedTotal,
-      staffMember: user?._id // or user?.id depending on your user object structure
+      // staffMember ID is added by the backend using req.user.id
     };
-    console.log('Order Details:', orderDetails);
-    alert('Order ready for billing (see console). Next step will implement API call.');
-    // TODO: Call API to create billing record in the next step.
-    // For now, reset form as a placeholder for successful submission
-    // setCustomerName('');
-    // setCarDetails('');
-    // setSelectedServices({});
+
+    setIsSubmittingOrder(true);
+    try {
+      const response = await apiClient.post('/billing', orderDetails);
+      setFormSuccess(`Billing record created successfully! ID: ${response.data._id}`);
+      resetForm(); // Clear form on success
+      // Optionally, navigate or show a persistent success message
+    } catch (err) {
+      console.error('Error creating billing record:', err);
+      setFormError(err.response?.data?.message || 'Failed to create billing record.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
   };
 
   if (authLoading || (!isAuthenticated && !authLoading)) {
     return <p>Loading or redirecting...</p>;
   }
    if (!authLoading && !['staff', 'owner'].includes(user?.role)) {
-    return <p>Access Denied. Redirecting...</p>; // Should be handled by useEffect
+    return <p>Access Denied. Redirecting...</p>;
   }
-
 
   return (
     <div style={{ padding: '20px', display: 'flex', gap: '30px' }}>
@@ -114,14 +133,14 @@ export default function StaffDashboard() {
             type="text"
             placeholder="Customer Name"
             value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
+            onChange={(e) => { setCustomerName(e.target.value); setFormError(''); setFormSuccess(''); }}
             style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
           />
           <input
             type="text"
             placeholder="Car Details (e.g., Make, Model, License Plate)"
             value={carDetails}
-            onChange={(e) => setCarDetails(e.target.value)}
+            onChange={(e) => { setCarDetails(e.target.value); setFormError(''); setFormSuccess(''); }}
             style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
           />
         </div>
@@ -153,9 +172,11 @@ export default function StaffDashboard() {
 
       <div style={{ flex: 1, borderLeft: '1px solid #ccc', paddingLeft: '30px' }}>
         <h2>Order Summary</h2>
-        {Object.values(selectedServices).every(v => !v) ? (
+        {formError && <p style={{ color: 'red' }}>{formError}</p>}
+        {formSuccess && <p style={{ color: 'green' }}>{formSuccess}</p>}
+        {Object.values(selectedServices).every(v => !v) && !formSuccess ? ( // Hide if success message is shown
           <p>No services selected yet.</p>
-        ) : (
+        ) : !formSuccess && ( // Hide if success message is shown
           <>
             <ul style={{ listStyle: 'none', padding: 0 }}>
               {services.filter(s => selectedServices[s._id]).map(s => (
@@ -170,7 +191,7 @@ export default function StaffDashboard() {
         )}
         <button
           onClick={handleSubmitOrder}
-          disabled={isLoadingServices || Object.values(selectedServices).every(v => !v) || !customerName.trim() || !carDetails.trim()}
+          disabled={isLoadingServices || isSubmittingOrder || (Object.values(selectedServices).every(v => !v) && !formSuccess) || (!customerName.trim() && !formSuccess) || (!carDetails.trim() && !formSuccess) }
           style={{
             padding: '12px 20px',
             backgroundColor: '#0070f3',
@@ -182,7 +203,7 @@ export default function StaffDashboard() {
             marginTop: '20px'
           }}
         >
-          Proceed to Create Bill
+          {isSubmittingOrder ? 'Submitting...' : 'Submit Bill'}
         </button>
       </div>
     </div>

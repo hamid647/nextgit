@@ -55,6 +55,115 @@ router.post('/', protect, isStaff, async (req, res) => {
   }
 });
 
+// POST /api/billing/:id/request-change - Staff submit a request for billing change
+router.post('/:id/request-change', protect, isStaff, async (req, res) => {
+  const { newAmount, reason } = req.body;
+  const billingId = req.params.id;
+
+  if (newAmount === undefined || !reason) {
+    return res.status(400).json({ message: 'New amount and reason are required for a change request.' });
+  }
+  const parsedNewAmount = parseFloat(newAmount);
+  if (isNaN(parsedNewAmount) || parsedNewAmount < 0) {
+    return res.status(400).json({ message: 'New amount must be a valid non-negative number.' });
+  }
+
+  try {
+    const billingRecord = await Billing.findById(billingId);
+    if (!billingRecord) {
+      return res.status(404).json({ message: 'Billing record not found.' });
+    }
+
+    // Optional: Add logic to check if the staff member is authorized to request change (e.g., original creator)
+    // For now, any staff can request.
+
+    // Prevent new request if one is already pending and not resolved
+    if (billingRecord.requestChange && billingRecord.requestChange.requested && !billingRecord.requestChange.resolved) {
+        return res.status(400).json({ message: 'A change request is already pending for this billing record.' });
+    }
+
+    billingRecord.requestChange = {
+      requested: true,
+      newAmount: parsedNewAmount,
+      reason: reason.trim(),
+      requestedBy: req.user.id, // Track who requested
+      requestedAt: Date.now(),
+      resolved: false,
+      approved: undefined, // Reset approval status
+      ownerComment: undefined, // Reset owner comment
+      resolvedAt: undefined, // Reset resolved date
+    };
+
+    await billingRecord.save();
+    // Populate for response consistency
+    const populatedRecord = await Billing.findById(billingRecord._id)
+        .populate('services', 'name price')
+        .populate('staffMember', 'username')
+        .populate('requestChange.requestedBy', 'username');
+
+    res.json(populatedRecord);
+  } catch (error) {
+    console.error('Error submitting billing change request:', error);
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({ message: 'Invalid billing ID format.' });
+    }
+    res.status(500).json({ message: 'Server error submitting billing change request.', error: error.message });
+  }
+});
+
+// PUT /api/billing/:id/resolve-change - Owner approves/rejects a billing change request
+router.put('/:id/resolve-change', protect, isOwner, async (req, res) => {
+  const { approved, ownerComment } = req.body; // approved is boolean
+  const billingId = req.params.id;
+
+  if (approved === undefined) {
+    return res.status(400).json({ message: 'Approval status (true or false) is required.' });
+  }
+
+  try {
+    const billingRecord = await Billing.findById(billingId);
+    if (!billingRecord) {
+      return res.status(404).json({ message: 'Billing record not found.' });
+    }
+
+    if (!billingRecord.requestChange || !billingRecord.requestChange.requested) {
+      return res.status(400).json({ message: 'No pending change request found for this billing record.' });
+    }
+    if (billingRecord.requestChange.resolved) {
+      return res.status(400).json({ message: 'This change request has already been resolved.' });
+    }
+
+    billingRecord.requestChange.resolved = true;
+    billingRecord.requestChange.approved = !!approved; // Ensure boolean
+    billingRecord.requestChange.resolvedBy = req.user.id; // Track who resolved
+    billingRecord.requestChange.resolvedAt = Date.now();
+    if (ownerComment) {
+        billingRecord.requestChange.ownerComment = ownerComment.trim();
+    }
+
+    if (approved === true) {
+      billingRecord.totalAmount = billingRecord.requestChange.newAmount;
+      // Potentially update paymentStatus if needed, e.g., back to 'pending' if it was 'paid'
+    }
+
+    await billingRecord.save();
+    // Populate for response consistency
+    const populatedRecord = await Billing.findById(billingRecord._id)
+        .populate('services', 'name price')
+        .populate('staffMember', 'username')
+        .populate('requestChange.requestedBy', 'username')
+        .populate('requestChange.resolvedBy', 'username');
+
+    res.json(populatedRecord);
+  } catch (error) {
+    console.error('Error resolving billing change request:', error);
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({ message: 'Invalid billing ID format.' });
+    }
+    res.status(500).json({ message: 'Server error resolving billing change request.', error: error.message });
+  }
+});
+
 // GET /api/billing - Retrieve billing records (All for Owner, own for Staff)
 router.get('/', protect, isStaff, async (req, res) => {
   try {
