@@ -1,30 +1,36 @@
 'use client';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link'; // For linking to register page
+import Link from 'next/link'; // For linking to login page
 
-export default function Login() {
+export default function Register() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, loading } = useAuth();
-  const router = useRouter();
+  const [success, setSuccess] = useState('');
+  const { register, loading } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
     try {
-      await login(username, password);
-      // Redirect is handled within login function in AuthContext
+      await register(username, password);
+      setSuccess('Registration successful! Redirecting to login...');
+      // Redirect is handled in AuthContext or can be delayed here
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err.response?.data?.message || 'Registration failed. Please try again.');
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-      <h1>Login</h1>
+      <h1>Register</h1>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '300px' }}>
         <input
           type="text"
@@ -42,13 +48,22 @@ export default function Login() {
           required
           style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
         />
+        <input
+          type="password"
+          placeholder="Confirm Password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+          style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ccc' }}
+        />
         {error && <p style={{ color: 'red' }}>{error}</p>}
+        {success && <p style={{ color: 'green' }}>{success}</p>}
         <button type="submit" disabled={loading} style={{ padding: '10px', borderRadius: '5px', border: 'none', backgroundColor: '#0070f3', color: 'white', cursor: 'pointer' }}>
-          {loading ? 'Logging in...' : 'Login'}
+          {loading ? 'Registering...' : 'Register'}
         </button>
       </form>
       <p style={{ marginTop: '15px' }}>
-        Don\'t have an account? <Link href="/register" style={{ color: '#0070f3' }}>Register here</Link>
+        Already have an account? <Link href="/login" style={{ color: '#0070f3' }}>Login here</Link>
       </p>
     </div>
   );

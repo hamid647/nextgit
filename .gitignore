@@ -59,3 +59,10 @@ Thumbs.db
 # Misc
 *.log
 .next/cache/
+
+# Server dependencies
+server/node_modules
+
+# Environment variables file
+.env
+server/.env
